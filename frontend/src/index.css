@@ -1,0 +1,239 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Static nebula gradient -- paints on the very first frame, before React,
+ * Vite's JS bundle, or the PixelUniverse canvas have done anything. If the
+ * canvas is ever slow to mount (or fails for some unexpected reason), this
+ * is what's underneath it, so the page never flashes a flat, dead color.
+ */
+html,
+body {
+  background-color: #05060f;
+  background-image: radial-gradient(ellipse 60% 40% at 15% 20%, rgba(67, 56, 202, 0.35), transparent 60%),
+    radial-gradient(ellipse 50% 35% at 85% 12%, rgba(115, 239, 247, 0.1), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 50% 105%, rgba(93, 39, 93, 0.28), transparent 60%),
+    linear-gradient(180deg, #05060f 0%, #0d1130 100%);
+  background-attachment: fixed;
+  min-height: 100%;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Keep pixel art crisp when canvases are scaled instead of letting the browser blur them. */
+canvas {
+  image-rendering: pixelated;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Type roles                                                             */
+/* ---------------------------------------------------------------------- */
+
+/* Reserved for page titles only -- Press Start 2P is a true bitmap face,
+   legible at these sizes but not at body-copy sizes, so it never appears
+   below text-base. */
+.font-pixel {
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Structural motif: chunky cut corners, used on panels/cards site-wide   */
+/* instead of a generic rounded rect, so the "material" reads as crafted  */
+/* rather than templated.                                                 */
+/* ---------------------------------------------------------------------- */
+.pixel-frame {
+  position: relative;
+  clip-path: polygon(
+    0 10px,
+    10px 10px,
+    10px 0,
+    calc(100% - 10px) 0,
+    calc(100% - 10px) 10px,
+    100% 10px,
+    100% calc(100% - 10px),
+    calc(100% - 10px) calc(100% - 10px),
+    calc(100% - 10px) 100%,
+    10px 100%,
+    10px calc(100% - 10px),
+    0 calc(100% - 10px)
+  );
+  box-shadow: inset 0 0 0 1px rgba(115, 239, 247, 0.16);
+}
+
+.pixel-frame-gold {
+  box-shadow: inset 0 0 0 1px rgba(255, 205, 117, 0.35);
+}
+
+.pixel-frame-sm {
+  clip-path: polygon(
+    0 6px,
+    6px 6px,
+    6px 0,
+    calc(100% - 6px) 0,
+    calc(100% - 6px) 6px,
+    100% 6px,
+    100% calc(100% - 6px),
+    calc(100% - 6px) calc(100% - 6px),
+    calc(100% - 6px) 100%,
+    6px 100%,
+    6px calc(100% - 6px),
+    0 calc(100% - 6px)
+  );
+}
+
+/* ---------------------------------------------------------------------- */
+/* Hover glow -- used sparingly on interactive surfaces (buttons, cards,  */
+/* nav links) so hover states feel like they belong to the same universe  */
+/* as the starfield, instead of a generic Tailwind shadow bump.           */
+/* ---------------------------------------------------------------------- */
+.glow-hover {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.glow-hover:hover {
+  box-shadow: 0 0 0 1px rgba(115, 239, 247, 0.55), 0 0 20px -4px rgba(115, 239, 247, 0.6);
+}
+
+/* Faint CRT scanline texture -- reserved for the nav bar and a couple of
+   hero-ish moments. Overlaying this everywhere would fight legibility, so
+   it's opt-in via this class rather than global. */
+.scanlines {
+  position: relative;
+  isolation: isolate;
+}
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.05) 0px,
+    rgba(255, 255, 255, 0.05) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  mix-blend-mode: overlay;
+}
+
+/* Small repeating-dot divider, used instead of a plain <hr> between panel
+   sections -- a tiny detail that still reads as "pixel," not decoration
+   for its own sake. */
+.pixel-divider {
+  height: 2px;
+  background-image: linear-gradient(to right, rgba(148, 163, 194, 0.35) 50%, transparent 50%);
+  background-size: 6px 2px;
+  background-repeat: repeat-x;
+}
+
+/* Keyboard-shortcut hint chips, used in the toolbar. */
+kbd {
+  display: inline-block;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(115, 239, 247, 0.08);
+  border: 1px solid rgba(115, 239, 247, 0.25);
+  color: rgb(148, 163, 194);
+  opacity: 0.8;
+}
+
+/* Small tactile "press" feedback on click -- reinforces the chunky feel
+   without needing a dedicated class on every button. */
+button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Global range-input theming -- covers the color wheel's value slider and
+   the tile tester's zoom control. appearance:none is needed for a visible,
+   consistently-sized thumb across browsers (without it, a slider styled
+   with appearance-none elsewhere can end up with no visible thumb at all). */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: #334155;
+  border-radius: 2px;
+  outline: none;
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #73eff7;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(115, 239, 247, 0.5);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 12px rgba(115, 239, 247, 0.7);
+}
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #73eff7;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(115, 239, 247, 0.5);
+}
+
+/* Thin themed scrollbar so overflowed lists (saved palettes, recent      */
+/* colors) don't fall back to a jarring default system scrollbar.         */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(115, 239, 247, 0.35) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(115, 239, 247, 0.28);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(115, 239, 247, 0.45);
+}
+
+/* Reset the browser's native focus outline once, globally, so it never
+   doubles up with the deliberate :focus-visible ring below. */
+input,
+select,
+textarea,
+button,
+a {
+  outline: none;
+}
+
+/* Visible keyboard focus everywhere, regardless of element type. Deliberately
+   no border-radius here -- browsers already follow each element's own
+   rounding for outlines, and forcing one here would fight elements like the
+   circular help button. */
+:focus-visible {
+  outline: 2px solid #73eff7;
+  outline-offset: 2px;
+}
+
+/* Respect prefers-reduced-motion for every CSS animation/transition added
+   above -- PixelUniverse handles its own canvas loop separately. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
