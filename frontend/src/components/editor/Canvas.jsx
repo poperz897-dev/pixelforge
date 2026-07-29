@@ -8,12 +8,24 @@ import { mirrorPoints } from '../../utils/symmetry.js';
 const STARCYAN = '115, 239, 247';
 const SHAPE_TOOLS = new Set(['line', 'rect', 'ellipse']);
 
+// Helper functions for tint mixing
+function hexToRgb(hex) {
+  const v = hex.replace('#', '');
+  return [parseInt(v.slice(0,2),16), parseInt(v.slice(2,4),16), parseInt(v.slice(4,6),16)];
+}
+
+function rgbToHex([r,g,b]) {
+  const clamp = (n) => Math.max(0, Math.min(255, Math.round(n)));
+  return '#' + [r,g,b].map(v => clamp(v).toString(16).padStart(2,'0')).join('');
+}
+
 export default function Canvas({
   grid, width, height, gridShape = 'square', isoRatioW, isoRatioH,
   tool, activeColor, onPixel, onFillStart, onFillEnd, onFloodFill, onEyedrop, onColorReplace,
   showGridLines = true,
   brushSize = 1, brushShape = 'square', pixelPerfect = false, shapeFilled = false,
   symmetry = { horizontal: false, vertical: false },
+  onionLayers = { before: [], after: [] },
 }) {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -51,6 +63,35 @@ export default function Canvas({
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!grid?.length || grid.length !== height || !grid[0] || grid[0].length !== width) return;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    
+    // Render onion skins (before frames)
+    const renderOnionLayer = (onion, scale, offsetX, offsetY) => {
+      const { grid: onionGrid, opacity, tint } = onion;
+      if (!onionGrid) return;
+      const tintRgb = hexToRgb(tint);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const color = onionGrid[y]?.[x];
+          if (!color) continue;
+          const srcRgb = hexToRgb(color);
+          const mixed = [
+            Math.round(srcRgb[0] * (1 - opacity) + tintRgb[0] * opacity),
+            Math.round(srcRgb[1] * (1 - opacity) + tintRgb[1] * opacity),
+            Math.round(srcRgb[2] * (1 - opacity) + tintRgb[2] * opacity),
+          ];
+          ctx.fillStyle = rgbToHex(mixed);
+          ctx.fillRect(offsetX + x * scale, offsetY + y * scale, scale, scale);
+        }
+      }
+    };
+
+    // Draw before onions
+    onionLayers.before.forEach(onion => renderOnionLayer(onion, cellPx, 0, 0));
+
+    // Draw current frame
     drawPixelGrid(ctx, { grid, width, height, gridShape, isoRatioW, isoRatioH, cellPx, showCheckerboard: false, showGridLines });
 
     if (previewCells.length) {
@@ -74,6 +115,9 @@ export default function Canvas({
       ctx.restore();
     }
 
+    // Draw after onions
+    onionLayers.after.forEach(onion => renderOnionLayer(onion, cellPx, 0, 0));
+
     if (hoverCell && !isDrawing && (tool === 'pencil' || tool === 'eraser') && isAllowed(hoverCell.x, hoverCell.y)) {
       ctx.save();
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
@@ -87,7 +131,7 @@ export default function Canvas({
     }
   }, [
     grid, width, height, gridShape, isoRatioW, isoRatioH, cellPx, showGridLines,
-    previewCells, activeColor, hasSymmetry, symmetry, hoverCell, isDrawing, tool, brushSize, brushShape, isAllowed,
+    previewCells, activeColor, hasSymmetry, symmetry, hoverCell, isDrawing, tool, brushSize, brushShape, isAllowed, onionLayers,
   ]);
 
   const cellFromEvent = useCallback(
