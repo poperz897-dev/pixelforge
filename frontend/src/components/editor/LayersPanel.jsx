@@ -216,10 +216,16 @@ export default function LayersPanel({
   onSetOpacity,
   onSetBlendMode,
   onReorderLayer,
+  onClearSelection, // new prop – function to clear selection
 }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [editingId, setEditingId] = useState(null);
   const [dragState, setDragState] = useState({ draggingId: null, overId: null, zone: null });
+
+  // Clear selection when layer or frame changes
+  useEffect(() => {
+    onClearSelection?.();
+  }, [activeLayerId, activeFrameId, onClearSelection]);
 
   const toggleCollapse = (id) =>
     setCollapsed((prev) => {

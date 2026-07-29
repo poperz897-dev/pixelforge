@@ -5,14 +5,18 @@ import ColorPalette from '../components/editor/ColorPalette.jsx';
 import LayersPanel from '../components/editor/LayersPanel.jsx';
 import Toolbar from '../components/editor/Toolbar.jsx';
 import WelcomeTutorial from '../components/editor/WelcomeTutorial.jsx';
+import { Timeline } from '../components/editor/Timeline.jsx';
+import { AnimationPreview } from '../components/editor/AnimationPreview.jsx';
 import PixelLoader from '../components/ui/PixelLoader.jsx';
 import { useDocumentModel } from '../hooks/useDocumentModel.js';
+import { useSelection } from '../hooks/useSelection.js';
+import { useOnionSkin } from '../hooks/useOnionSkin.js';
 import { toServerPayload, documentHasContent } from '../utils/documentModel.js';
 import { useRecentColors } from '../hooks/useRecentColors.js';
 import { useLocalStorage } from '../hooks/useLocalStorage.js';
 import { api } from '../api/client.js';
 import { computeCanvasSize, drawPixelGrid } from '../utils/renderGrid.js';
-import { ISO_RATIO_PRESETS, ISO_GRID_SIZES, findIsoRatioPreset, isValidIsoCombo, validateCustomRatio } from '../utils/isoGrid.js';
+import { isInsideIsoDiamond, ISO_RATIO_PRESETS, ISO_GRID_SIZES, findIsoRatioPreset, isValidIsoCombo, validateCustomRatio } from '../utils/isoGrid.js';
 
 const CATEGORIES = {
   game_asset: ['tile', 'character', 'mob', 'item', 'ui'],
@@ -73,10 +77,6 @@ function EditorInner({ artworkId, initial }) {
   const navigate = useNavigate();
   const isEditing = !!artworkId;
 
-  // "Create an isometric tile" on the homepage links here with this hint
-  // so it actually lands you somewhere ready to draw instead of the plain
-  // square default -- only applies to a brand-new piece, never overrides
-  // an existing artwork's real saved shape.
   const [searchParams] = useSearchParams();
   const preselectIso = !isEditing && searchParams.get('shape') === 'isometric';
 
@@ -116,6 +116,33 @@ function EditorInner({ artworkId, initial }) {
     reorderLayer,
   } = useDocumentModel(gridSize, gridSize, initial?.document ?? null);
 
+  const isAllowedCallback = useCallback((x, y) => {
+    if (gridShape === 'square') return true;
+    return isInsideIsoDiamond(x, y, Math.max(gridSize, gridSize), isoRatioW, isoRatioH);
+  }, [gridShape, gridSize, isoRatioW, isoRatioH]);
+
+  const {
+    selection,
+    setSelection,
+    selectionMode,
+    setSelectionMode,
+    isSelecting,
+    setIsSelecting,
+    points,
+    setPoints,
+    startPos,
+    setStartPos,
+    endPos,
+    setEndPos,
+    extractRegion,
+    createSelectionFromMask,
+    clearSelection,
+    flipContent,
+    rotateContent,
+    scaleContent,
+    pasteContent,
+  } = useSelection({ width: gridSize, height: gridSize, isAllowed: isAllowedCallback });
+
   const [tool, setTool] = useState('pencil');
   const [showGridLines, setShowGridLines] = useState(true);
   const [brushSize, setBrushSize] = useState(1);
@@ -147,6 +174,24 @@ function EditorInner({ artworkId, initial }) {
     setSeenTutorial(true);
   };
 
+  const [showPreview, setShowPreview] = useState(false);
+
+  const onionLayers = useOnionSkin({
+    layers: docModel.layers,
+    cels: docModel.cels,
+    frames: docModel.frames,
+    currentFrameId: activeFrameId,
+    width: gridSize,
+    height: gridSize,
+    onionCount: 1,
+    onionOpacity: 0.25,
+  });
+
+  // Clear selection when layer changes
+  useEffect(() => {
+    clearSelection();
+  }, [activeLayerId, activeFrameId, clearSelection]);
+
   const categoryOptions = useMemo(() => CATEGORIES[projectType], [projectType]);
   const validIsoSizes = useMemo(() => ISO_GRID_SIZES.filter((s) => isValidIsoCombo(s, isoRatioW, isoRatioH)), [isoRatioW, isoRatioH]);
 
@@ -157,11 +202,6 @@ function EditorInner({ artworkId, initial }) {
       .catch(() => {});
   }, []);
 
-  // The color wheel calls this continuously while dragging (many times a
-  // second) -- recording every intermediate value would flood "Recent"
-  // with near-duplicate colors from a single gesture. Discrete picks
-  // (palette swatch, eyedropper, custom-color save) record immediately;
-  // wheel drags settle into history ~400ms after the color stops moving.
   const recentRecordTimer = useRef(null);
   const selectColor = useCallback(
     (color, { debounceRecent = false } = {}) => {
@@ -252,6 +292,46 @@ function EditorInner({ artworkId, initial }) {
     link.click();
   };
 
+  const applyTransform = useCallback((type, value) => {
+    if (!selection.hasSelection) return;
+    let transformed = selection.content;
+    if (type === 'flipH') transformed = flipContent(selection.content, 'horizontal');
+    else if (type === 'flipV') transformed = flipContent(selection.content, 'vertical');
+    else if (type === 'rotate') transformed = rotateContent(selection.content, value);
+    else if (type === 'scale') transformed = scaleContent(selection.content, value, value);
+    
+    const newBounds = {
+      x0: selection.bounds.x0,
+      y0: selection.bounds.y0,
+      x1: selection.bounds.x0 + (transformed[0]?.length || 0) - 1,
+      y1: selection.bounds.y0 + transformed.length - 1,
+    };
+    setSelection(prev => ({ ...prev, content: transformed, bounds: newBounds }));
+    
+    const newGrid = grid.map(row => [...row]);
+    for (let y = selection.bounds.y0; y <= selection.bounds.y1; y++) {
+      for (let x = selection.bounds.x0; x <= selection.bounds.x1; x++) {
+        if (isAllowedCallback(x, y)) newGrid[y][x] = null;
+      }
+    }
+    
+    for (let y = 0; y < transformed.length; y++) {
+      for (let x = 0; x < transformed[0].length; x++) {
+        const targetX = newBounds.x0 + x;
+        const targetY = newBounds.y0 + y;
+        if (targetX >= 0 && targetY >= 0 && targetX < gridSize && targetY < gridSize && isAllowedCallback(targetX, targetY)) {
+          newGrid[targetY][targetX] = transformed[y][x];
+        }
+      }
+    }
+    
+    for (let y = 0; y < gridSize; y++) {
+      for (let x = 0; x < gridSize; x++) {
+        setPixel(x, y, newGrid[y][x]);
+      }
+    }
+  }, [selection, grid, gridSize, isAllowedCallback, flipContent, rotateContent, scaleContent, setSelection, setPixel]);
+
   const handleSave = async () => {
     if (!title.trim()) {
       setError('Give your artwork a title first.');
@@ -311,6 +391,10 @@ function EditorInner({ artworkId, initial }) {
           onToggleShapeFilled={() => setShapeFilled((f) => !f)}
           symmetry={symmetry}
           onToggleSymmetry={toggleSymmetryAxis}
+          selection={selection}
+          onTransform={applyTransform}
+          width={gridSize}
+          height={gridSize}
         />
       </div>
 
@@ -427,6 +511,26 @@ function EditorInner({ artworkId, initial }) {
             pixelPerfect={pixelPerfect}
             shapeFilled={shapeFilled}
             symmetry={symmetry}
+            onionLayers={onionLayers}
+            selectionMode={selectionMode}
+            setSelectionMode={setSelectionMode}
+            selection={selection}
+            setSelection={setSelection}
+            isSelecting={isSelecting}
+            setIsSelecting={setIsSelecting}
+            points={points}
+            setPoints={setPoints}
+            startPos={startPos}
+            setStartPos={setStartPos}
+            endPos={endPos}
+            setEndPos={setEndPos}
+            extractRegion={extractRegion}
+            createSelectionFromMask={createSelectionFromMask}
+            clearSelection={clearSelection}
+            flipContent={flipContent}
+            rotateContent={rotateContent}
+            scaleContent={scaleContent}
+            onTransform={applyTransform}
           />
         </div>
       </div>
@@ -464,6 +568,15 @@ function EditorInner({ artworkId, initial }) {
           onSetBlendMode={setLayerBlendMode}
           onReorderLayer={reorderLayer}
         />
+
+        <Timeline />
+
+        <button
+          onClick={() => setShowPreview(true)}
+          className="glow-hover w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm rounded-lg px-2 py-2 transition-colors"
+        >
+          ▶ Preview Animation
+        </button>
 
         <div className="pixel-frame bg-panel backdrop-blur-sm p-4 space-y-3">
           <h3 className="text-xs uppercase tracking-wide text-slate-400 font-semibold">Saved palettes</h3>
@@ -598,6 +711,8 @@ function EditorInner({ artworkId, initial }) {
           </button>
         </div>
       </div>
+
+      <AnimationPreview isOpen={showPreview} onClose={() => setShowPreview(false)} />
 
       <WelcomeTutorial open={tutorialOpen} onClose={closeTutorial} tips={TUTORIAL_TIPS} ctaLabel="Got it, let's create" />
     </div>
